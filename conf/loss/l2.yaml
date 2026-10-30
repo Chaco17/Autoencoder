@@ -1,0 +1,3 @@
+name: l2
+fn:
+  _target_: torch.nn.MSELoss

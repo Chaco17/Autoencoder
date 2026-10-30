@@ -1,0 +1,7 @@
+name: u-net
+beta: 0.0            # no KL term for the U-Net
+net:
+  _target_: src.models.unet.UNet
+  in_channels: 3
+  latent_dim: 128    # channels of the bottleneck (z = pooled bottleneck)
+  base_channels: 32

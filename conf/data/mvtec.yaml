@@ -1,0 +1,8 @@
+# MVTec AD extracted as data/mvtec_ad/<class>/{train,test,ground_truth} (see README).
+# Images are 1024x1024 (screw is grayscale); they are resized to img_size and converted to RGB when loaded.
+root: data/mvtec_ad
+classes: [cable, capsule, screw, transistor]
+img_size: 128
+batch_size: 32
+val_split: 0.15      # fraction of train/good used for validation
+num_workers: 2

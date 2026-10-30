@@ -1,0 +1,17 @@
+# Data (each person downloads MVTec AD, see README)
+data/*
+!data/.gitkeep
+
+# Experiment outputs
+outputs/
+multirun/
+wandb/
+lightning_logs/
+*.ckpt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/

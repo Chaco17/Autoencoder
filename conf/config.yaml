@@ -1,0 +1,20 @@
+# Main Hydra config. Each group below can be overridden from the CLI, e.g.:
+#   python train.py model=u-net loss=ssim
+#   python train.py -m model=vae,u-net loss=l1,l2,ssim,ssim_l1
+defaults:
+  - data: mvtec
+  - model: vae
+  - loss: l1
+  - trainer: default
+  - logger: wandb
+  - _self_
+
+seed: 42
+run_name: ${model.name}-${loss.name}
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}_${run_name}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${run_name}

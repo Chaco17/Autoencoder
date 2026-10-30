@@ -1,0 +1,8 @@
+name: vae
+beta: 0.001          # weight of the KL term: loss = recon + beta * KL
+net:
+  _target_: src.models.vae.VAE
+  in_channels: 3
+  img_size: ${data.img_size}
+  latent_dim: 128    # z
+  base_channels: 32

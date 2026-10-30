@@ -1,0 +1,4 @@
+name: ssim_l1
+fn:
+  _target_: src.losses.SSIML1Loss
+  alpha: 0.85        # loss = alpha * (1 - SSIM) + (1 - alpha) * L1
