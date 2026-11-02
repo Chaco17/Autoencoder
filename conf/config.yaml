@@ -1,6 +1,7 @@
-# Main Hydra config. Each group below can be overridden from the CLI, e.g.:
-#   python train.py model=u-net loss=ssim
-#   python train.py -m model=vae,u-net loss=l1,l2,ssim,ssim_l1
+# Main Hydra config: composes one option from each config group.
+# Override any group or value from the CLI, e.g.:
+#   python train.py model=u-net loss=ssim trainer.max_epochs=100 model.net.latent_dim=64
+#   python train.py -m            # sweeps the 8 runs defined in hydra.sweeper.params
 defaults:
   - data: mvtec
   - model: vae
@@ -18,3 +19,7 @@ hydra:
   sweep:
     dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: ${run_name}
+  sweeper:
+    params:                       # only used with -m (multirun): 2 models x 4 losses
+      model: vae,u-net
+      loss: l1,l2,ssim,ssim_l1

@@ -1,7 +1,17 @@
-project: tarea03-autoencoder
-entity: null         # W&B user or team; null = your default account
-group: ${model.name}
-mode: online         # online | offline | disabled
-num_images: 16       # images shown in each reconstruction grid
-images_every_n_epochs: 5
-tsne_every_n_epochs: 10
+# Arguments of lightning.pytorch.loggers.WandbLogger (extra keys go to wandb.init).
+wandb:
+  _target_: lightning.pytorch.loggers.WandbLogger
+  project: tarea03-autoencoder
+  entity: null       # W&B user or team; null = your default account
+  name: ${run_name}
+  group: ${model.name}
+  tags: [ "${model.name}", "${loss.name}" ]
+  mode: online       # online | offline | disabled
+  log_model: false
+  save_dir: ${hydra:runtime.output_dir}
+
+# What the image/t-SNE callbacks log to W&B.
+viz:
+  num_images: 16     # images shown in each reconstruction grid
+  images_every_n_epochs: 5
+  tsne_every_n_epochs: 10
