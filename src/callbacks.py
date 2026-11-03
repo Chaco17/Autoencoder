@@ -159,3 +159,17 @@ class TestReconstructionCallback(Callback):
                 f"Rows 4-6: defective (original, reconstruction, error). Defects: {', '.join(captions)}"
             ],
         )
+
+
+class EpochSummaryCallback(Callback):
+    """Prints one line per epoch when the tqdm bar is disabled (readable output inside notebook cells)."""
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        if trainer.sanity_checking or trainer.progress_bar_callback is not None:
+            return
+        metrics = trainer.callback_metrics
+        parts = [f"epoch {trainer.current_epoch + 1:>3}/{trainer.max_epochs}"]
+        for key in ("train/loss", "val/loss", "val/ssim"):
+            if key in metrics:
+                parts.append(f"{key} {metrics[key].item():.4f}")
+        print(" | ".join(parts), flush=True)

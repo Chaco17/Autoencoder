@@ -14,6 +14,22 @@ reports/     Figuras exportadas de W&B
 train.py     Punto de entrada del entrenamiento
 ```
 
+## Entorno
+
+Entorno virtual con Python 3.11 (desde la raíz del repo, PowerShell):
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\python -m pip install --upgrade pip
+.venv\Scripts\python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m ipykernel install --user --name autoencoder --display-name "Python (.venv Autoencoder)"
+.venv\Scripts\wandb login
+```
+
+Después, abrir `notebooks/main.ipynb` con el kernel `.venv` y ejecutarlo en orden (el entrenamiento se lanza
+desde la sección 6 del notebook).
+
 ## Dataset
 
 Se usan solo 4 clases de MVTec AD: `cable`, `capsule`, `screw` y `transistor`.

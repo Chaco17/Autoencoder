@@ -1,4 +1,4 @@
-# Install PyTorch first following https://pytorch.org/get-started/locally/ (CUDA or CPU build)
+# Install PyTorch first (CUDA build): pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 torch>=2.2
 torchvision>=0.17
 lightning>=2.2
@@ -9,4 +9,6 @@ scikit-learn>=1.4
 plotly>=5.20
 pillow>=10.0
 numpy>=1.26
+pandas>=2.0
 jupyter
+ipykernel

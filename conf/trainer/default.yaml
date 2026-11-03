@@ -1,8 +1,9 @@
 # Arguments of lightning.pytorch.Trainer (built with hydra.utils.instantiate).
 _target_: lightning.pytorch.Trainer
-max_epochs: 50
+max_epochs: 100
 accelerator: auto    # cpu | gpu | mps | auto
 devices: 1
 precision: 32
 log_every_n_steps: 5
 deterministic: false
+enable_progress_bar: true   # set to false when launching from the notebook (one summary line per epoch instead)

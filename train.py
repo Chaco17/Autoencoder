@@ -15,7 +15,12 @@ from hydra.utils import instantiate
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from omegaconf import DictConfig, OmegaConf
 
-from src.callbacks import LatentTSNECallback, ReconstructionCallback, TestReconstructionCallback
+from src.callbacks import (
+    EpochSummaryCallback,
+    LatentTSNECallback,
+    ReconstructionCallback,
+    TestReconstructionCallback,
+)
 from src.data import MVTecDataModule
 from src.module import AutoencoderModule
 
@@ -54,6 +59,7 @@ def main(cfg: DictConfig) -> None:
         ReconstructionCallback(num_images=viz.num_images, every_n_epochs=viz.images_every_n_epochs),
         LatentTSNECallback(every_n_epochs=viz.tsne_every_n_epochs),
         TestReconstructionCallback(num_images=viz.num_images),
+        EpochSummaryCallback(),
     ]
 
     trainer = instantiate(cfg.trainer, logger=logger, callbacks=callbacks)

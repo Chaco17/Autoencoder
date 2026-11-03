@@ -1,7 +1,7 @@
 # Arguments of lightning.pytorch.loggers.WandbLogger (extra keys go to wandb.init).
 wandb:
   _target_: lightning.pytorch.loggers.WandbLogger
-  project: tarea03-autoencoder
+  project: Autoencoder
   entity: null       # W&B user or team; null = your default account
   name: ${run_name}
   group: ${model.name}

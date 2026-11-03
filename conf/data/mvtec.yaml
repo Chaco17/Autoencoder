@@ -5,4 +5,4 @@ classes: [cable, capsule, screw, transistor]
 img_size: 128
 batch_size: 32
 val_split: 0.15      # fraction of train/good used for validation
-num_workers: 2
+num_workers: 0       # in-memory dataset: workers add nothing (and are slow on Windows/Jupyter)
