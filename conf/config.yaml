@@ -23,3 +23,7 @@ hydra:
     params:                       # only used with -m (multirun): 2 models x 4 losses
       model: vae,u-net
       loss: l1,l2,ssim,ssim_l1
+
+console:
+  verbose: true              # false = compact output: one line per epoch + summary per run (used by the notebook)
+  print_every_n_epochs: 5    # compact mode: also prints the first/last epoch and every val/loss improvement

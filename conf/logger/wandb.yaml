@@ -2,7 +2,7 @@
 wandb:
   _target_: lightning.pytorch.loggers.WandbLogger
   project: Autoencoder
-  entity: null       # W&B user or team; null = your default account
+  entity: danielpulido-instituto-tecnol-gico-de-costa-rica   # W&B team (each member logs in with their own API key)
   name: ${run_name}
   group: ${model.name}
   tags: [ "${model.name}", "${loss.name}" ]

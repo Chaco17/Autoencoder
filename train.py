@@ -4,11 +4,21 @@ Usage:
     python train.py                         # defaults from conf/config.yaml
     python train.py model=u-net loss=ssim   # pick other config options
     python train.py -m                      # sweep 2 models x 4 losses
+    python train.py console.verbose=false   # compact output (what the notebook uses)
 """
+import json
+import logging
+import os
+import time
+import warnings
 from pathlib import Path
+
+# Hide torch's import-time "triton not found" message (Windows has no triton; it only affects flop counting)
+logging.getLogger("torch.utils.flop_counter").setLevel(logging.ERROR)
 
 import hydra
 import lightning as L
+import torch
 import wandb
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
@@ -25,10 +35,29 @@ from src.data import MVTecDataModule
 from src.module import AutoencoderModule
 
 
+def quiet_mode():
+    """Silence library banners/warnings so the console only shows our own summary lines."""
+    os.environ["WANDB_SILENT"] = "true"
+    warnings.filterwarnings("ignore")
+    for name in ("lightning", "lightning.pytorch", "lightning.fabric", "lightning_fabric"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
+def format_seconds(seconds):
+    minutes, seconds = divmod(int(round(seconds)), 60)
+    return f"{minutes}m{seconds:02d}s"
+
+
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def main(cfg: DictConfig) -> None:
-    print(OmegaConf.to_yaml(cfg, resolve=True))
-    L.seed_everything(cfg.seed, workers=True)
+    verbose = cfg.console.verbose
+    if verbose:
+        print(OmegaConf.to_yaml(cfg, resolve=True))
+    else:
+        quiet_mode()
+    start = time.perf_counter()
+    torch.set_float32_matmul_precision("high")  # TF32 on Tensor Core GPUs: faster, negligible precision change
+    L.seed_everything(cfg.seed, workers=True, verbose=verbose)
     output_dir = Path(HydraConfig.get().runtime.output_dir)
 
     # Data: MVTec AD (cable, capsule, screw, transistor) at 128x128x3
@@ -46,7 +75,16 @@ def main(cfg: DictConfig) -> None:
     logger = instantiate(cfg.logger.wandb)
     logger.log_hyperparams(OmegaConf.to_container(cfg, resolve=True))
 
+    print(
+        f"\n>> {cfg.run_name} | {cfg.trainer.max_epochs} épocas | batch {cfg.data.batch_size} | "
+        f"z {cfg.model.net.latent_dim} | lr {cfg.model.optimizer.lr} | W&B {cfg.logger.wandb.mode}",
+        flush=True,
+    )
+    if cfg.logger.wandb.mode == "online":
+        print(f"   {logger.experiment.url}", flush=True)
+
     viz = cfg.logger.viz
+    summary = EpochSummaryCallback(run_name=cfg.run_name, every_n_epochs=cfg.console.print_every_n_epochs)
     callbacks = [
         ModelCheckpoint(
             dirpath=output_dir / "checkpoints",
@@ -59,12 +97,39 @@ def main(cfg: DictConfig) -> None:
         ReconstructionCallback(num_images=viz.num_images, every_n_epochs=viz.images_every_n_epochs),
         LatentTSNECallback(every_n_epochs=viz.tsne_every_n_epochs),
         TestReconstructionCallback(num_images=viz.num_images),
-        EpochSummaryCallback(),
+        summary,
     ]
 
-    trainer = instantiate(cfg.trainer, logger=logger, callbacks=callbacks)
+    trainer = instantiate(cfg.trainer, logger=logger, callbacks=callbacks, enable_model_summary=verbose)
     trainer.fit(model, datamodule=datamodule)
-    trainer.test(model, datamodule=datamodule, ckpt_path="best")
+    trainer.test(model, datamodule=datamodule, ckpt_path="best", verbose=verbose)
+
+    # Compact result of the run: printed and saved as results.json (the notebook collects these files)
+    metrics = {k: float(v) for k, v in trainer.callback_metrics.items() if k.startswith("test/")}
+    results = {
+        "run": cfg.run_name,
+        "model": cfg.model.name,
+        "loss": cfg.loss.name,
+        "epochs": trainer.current_epoch,
+        "best_epoch": summary.best_epoch,
+        "best_val_loss": summary.best_val_loss,
+        "minutes": round((time.perf_counter() - start) / 60, 2),
+        "wandb_url": logger.experiment.url if cfg.logger.wandb.mode == "online" else None,
+        "output_dir": str(output_dir),
+        **metrics,
+    }
+    (output_dir / "results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
+
+    per_class = " ".join(
+        f"{c} {metrics[f'test/auroc_l1/{c}']:.2f}" for c in cfg.data.classes if f"test/auroc_l1/{c}" in metrics
+    )
+    print(
+        f"OK {cfg.run_name} terminado en {format_seconds(time.perf_counter() - start)} | "
+        f"mejor época {summary.best_epoch} (val/loss {summary.best_val_loss:.4f})\n"
+        f"   test: L1 {metrics.get('test/l1', float('nan')):.4f} | SSIM {metrics.get('test/ssim', float('nan')):.4f} | "
+        f"AUROC(L1) {metrics.get('test/auroc_l1', float('nan')):.3f} | por clase: {per_class}",
+        flush=True,
+    )
 
     # Close the run so each multirun job gets its own W&B run
     wandb.finish()

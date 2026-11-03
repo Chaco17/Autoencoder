@@ -4,6 +4,7 @@
 - LatentTSNECallback: t-SNE of z for the validation set over the epochs, and for the test set at the end.
 - TestReconstructionCallback: good vs defective test images, with their reconstructions and error maps.
 """
+import time
 from collections import defaultdict
 
 import plotly.graph_objects as go
@@ -11,6 +12,7 @@ import torch
 import wandb
 from lightning.pytorch.callbacks import Callback
 from sklearn.manifold import TSNE
+from torchvision.transforms.functional import to_pil_image
 from torchvision.utils import make_grid
 
 CATEGORY_SYMBOLS = ["circle", "square", "diamond", "triangle-up", "x", "cross"]
@@ -91,7 +93,7 @@ class ReconstructionCallback(Callback):
         grid = make_grid(torch.cat(tiles), nrow=self.nrow, padding=2, pad_value=1.0)
         trainer.logger.log_image(
             key="val/reconstructions",
-            images=[grid],
+            images=[to_pil_image(grid.clamp(0, 1))],  # PIL: wandb no longer scales [0, 1] floats
             caption=[f"Epoch {trainer.current_epoch}: odd rows = original, even rows = reconstruction"],
         )
 
@@ -153,7 +155,7 @@ class TestReconstructionCallback(Callback):
         captions = [dataset.defects[i] for i in indices[half:]]
         trainer.logger.log_image(
             key="test/reconstructions",
-            images=[grid],
+            images=[to_pil_image(grid.clamp(0, 1))],  # PIL: wandb no longer scales [0, 1] floats
             caption=[
                 "Rows 1-3: good (original, reconstruction, error). "
                 f"Rows 4-6: defective (original, reconstruction, error). Defects: {', '.join(captions)}"
@@ -162,14 +164,43 @@ class TestReconstructionCallback(Callback):
 
 
 class EpochSummaryCallback(Callback):
-    """Prints one line per epoch when the tqdm bar is disabled (readable output inside notebook cells)."""
+    """One compact line per epoch when the tqdm bar is disabled (readable output inside notebook cells).
 
-    def on_validation_epoch_end(self, trainer, pl_module):
-        if trainer.sanity_checking or trainer.progress_bar_callback is not None:
-            return
+    Prints the first and last epoch and every `every_n_epochs`; * marks a new best val/loss.
+    Also keeps the best epoch, which train.py reports at the end of the run.
+    """
+
+    def __init__(self, run_name="", every_n_epochs=5):
+        self.run_name = run_name
+        self.every_n_epochs = every_n_epochs
+        self.best_epoch, self.best_val_loss = None, float("inf")
+        self.epoch_times = []
+
+    def on_train_epoch_start(self, trainer, pl_module):
+        self._tick = time.perf_counter()
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        # Runs after the epoch's validation, so train and val metrics are from the same epoch
+        self.epoch_times.append(time.perf_counter() - self._tick)
         metrics = trainer.callback_metrics
-        parts = [f"epoch {trainer.current_epoch + 1:>3}/{trainer.max_epochs}"]
-        for key in ("train/loss", "val/loss", "val/ssim"):
-            if key in metrics:
-                parts.append(f"{key} {metrics[key].item():.4f}")
-        print(" | ".join(parts), flush=True)
+        epoch = trainer.current_epoch + 1
+        val_loss = float(metrics.get("val/loss", float("inf")))
+        improved = val_loss < self.best_val_loss
+        if improved:
+            self.best_epoch, self.best_val_loss = epoch, val_loss
+
+        if trainer.progress_bar_callback is not None:
+            return
+        if not (epoch == 1 or epoch == trainer.max_epochs or epoch % self.every_n_epochs == 0):
+            return
+        mean_time = sum(self.epoch_times) / len(self.epoch_times)
+        eta = mean_time * (trainer.max_epochs - epoch)
+        parts = [
+            f"{self.run_name:<14} epoch {epoch:>3}/{trainer.max_epochs}",
+            f"train {float(metrics.get('train/loss', float('nan'))):.4f}",
+            f"val {val_loss:.4f}",
+            f"val_ssim {float(metrics.get('val/ssim', float('nan'))):.3f}",
+            f"{self.epoch_times[-1]:4.1f}s/época",
+            f"ETA {int(eta // 60)}m{int(eta % 60):02d}s",
+        ]
+        print(" | ".join(parts) + (" *" if improved else ""), flush=True)
