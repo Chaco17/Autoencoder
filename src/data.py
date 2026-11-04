@@ -30,6 +30,18 @@ def load_image(path, img_size):
     return torch.from_numpy(np.array(img)).permute(2, 0, 1)
 
 
+# Resized images kept per process: in a Hydra multirun the 8 jobs share one process, so only the first loads from disk
+_IMAGE_CACHE = {}
+
+
+def load_images(paths, img_size):
+    """Stack of uint8 images (N, 3, H, W) for the given paths, cached in memory."""
+    key = (tuple(str(p) for p in paths), img_size)
+    if key not in _IMAGE_CACHE:
+        _IMAGE_CACHE[key] = torch.stack([load_image(path, img_size) for path in paths])
+    return _IMAGE_CACHE[key]
+
+
 class MVTecDataset(Dataset):
     """Images are resized once and kept in memory (~50 KB each at 128x128), so epochs are fast."""
 
@@ -37,7 +49,7 @@ class MVTecDataset(Dataset):
         self.categories = [category for _, category, _ in samples]
         self.defects = [defect for _, _, defect in samples]
         self.labels = [int(defect != "good") for defect in self.defects]  # 0 = good, 1 = defective
-        self.images = torch.stack([load_image(path, img_size) for path, _, _ in samples])
+        self.images = load_images([path for path, _, _ in samples], img_size)
 
     def __len__(self):
         return len(self.images)

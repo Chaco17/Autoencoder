@@ -7,3 +7,4 @@ precision: 32
 log_every_n_steps: 5
 deterministic: false
 enable_progress_bar: true   # set to false when launching from the notebook (one summary line per epoch instead)
+gradient_clip_val: 1.0      # clips the gradient norm: prevents the loss spikes seen in the VAE (e.g. val/loss 0.03 -> 37)

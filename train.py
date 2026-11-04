@@ -73,6 +73,7 @@ def main(cfg: DictConfig) -> None:
 
     # Logger: W&B run named <model>-<loss>, with the full resolved config attached
     logger = instantiate(cfg.logger.wandb)
+    logger._wandb_init.pop("anonymous", None)  # Lightning always sends it; wandb >= 0.31 warns that it is deprecated
     logger.log_hyperparams(OmegaConf.to_container(cfg, resolve=True))
 
     print(
@@ -121,13 +122,15 @@ def main(cfg: DictConfig) -> None:
     (output_dir / "results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
 
     per_class = " ".join(
-        f"{c} {metrics[f'test/auroc_l1/{c}']:.2f}" for c in cfg.data.classes if f"test/auroc_l1/{c}" in metrics
+        f"{c} {metrics[f'test/auroc_max/{c}']:.2f}" for c in cfg.data.classes if f"test/auroc_max/{c}" in metrics
     )
     print(
         f"OK {cfg.run_name} terminado en {format_seconds(time.perf_counter() - start)} | "
         f"mejor época {summary.best_epoch} (val/loss {summary.best_val_loss:.4f})\n"
         f"   test: L1 {metrics.get('test/l1', float('nan')):.4f} | SSIM {metrics.get('test/ssim', float('nan')):.4f} | "
-        f"AUROC(L1) {metrics.get('test/auroc_l1', float('nan')):.3f} | por clase: {per_class}",
+        f"AUROC media por clase: L1 {metrics.get('test/auroc_l1_mean', float('nan')):.3f} | "
+        f"max {metrics.get('test/auroc_max_mean', float('nan')):.3f}\n"
+        f"   AUROC(max) por clase: {per_class}",
         flush=True,
     )
 

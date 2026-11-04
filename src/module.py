@@ -62,10 +62,14 @@ class AutoencoderModule(L.LightningModule):
         x = batch["image"]
         # Per-image reconstruction error = anomaly score (used for histograms and AUROC)
         err = (recon - x).flatten(1)
+        # score_max: peak of the smoothed per-pixel error map. The image mean dilutes small defects
+        # (a scratch covers <1% of the pixels); the local maximum keeps them visible.
+        err_map = F.avg_pool2d((recon - x).abs().mean(1, keepdim=True), 11, stride=1, padding=5, count_include_pad=False)
         scores = {
             "score_l1": err.abs().mean(1),
             "score_mse": err.pow(2).mean(1),
             "score_ssim": 1.0 - ssim(recon, x, data_range=1.0, reduction="none"),
+            "score_max": err_map.flatten(1).amax(1),
         }
         for i in range(x.size(0)):
             self.test_scores.append(
@@ -80,16 +84,23 @@ class AutoencoderModule(L.LightningModule):
     def on_test_epoch_end(self):
         rows = self.test_scores
         labels = torch.tensor([r["label"] for r in rows])
-        score_names = ["score_l1", "score_mse", "score_ssim"]
+        score_names = ["score_l1", "score_mse", "score_ssim", "score_max"]
 
-        # AUROC: how well the reconstruction error separates good from defective images (0.5 = random)
+        # AUROC: how well the reconstruction error separates good from defective images (0.5 = random).
+        # The main figure is the mean of the per-class AUROCs (as in MVTec AD): pooling all classes mixes
+        # objects whose errors live on different scales, which lowers the global value.
         for name in score_names:
-            self.log(f"test/auroc_{name.removeprefix('score_')}", binary_auroc(torch.tensor([r[name] for r in rows]), labels))
+            short = name.removeprefix("score_")
+            self.log(f"test/auroc_{short}", binary_auroc(torch.tensor([r[name] for r in rows]), labels))
+            per_class = []
             for category in sorted({r["category"] for r in rows}):
                 cat_rows = [r for r in rows if r["category"] == category]
                 cat_scores = torch.tensor([r[name] for r in cat_rows])
                 cat_labels = torch.tensor([r["label"] for r in cat_rows])
-                self.log(f"test/auroc_{name.removeprefix('score_')}/{category}", binary_auroc(cat_scores, cat_labels))
+                auroc = binary_auroc(cat_scores, cat_labels)
+                per_class.append(auroc)
+                self.log(f"test/auroc_{short}/{category}", auroc)
+            self.log(f"test/auroc_{short}_mean", torch.stack(per_class).mean())
 
         # Raw scores as a W&B table: the notebook builds the per-defect histograms from it
         if isinstance(self.logger, WandbLogger):
