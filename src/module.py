@@ -14,12 +14,13 @@ def kl_divergence(mu, logvar):
 
 
 class AutoencoderModule(L.LightningModule):
-    def __init__(self, net, loss_fn, optimizer, beta=0.0):
+    def __init__(self, net, loss_fn, optimizer, beta=0.0, scheduler=None):
         super().__init__()
-        self.save_hyperparameters(ignore=["net", "loss_fn", "optimizer"])
+        self.save_hyperparameters(ignore=["net", "loss_fn", "optimizer", "scheduler"])
         self.net = net
         self.loss_fn = loss_fn
         self.optimizer_factory = optimizer  # functools.partial from Hydra (_partial_: true)
+        self.scheduler_factory = scheduler  # optional lr scheduler, also partial (receives the optimizer)
         self.beta = beta
         self.test_scores = []
 
@@ -110,4 +111,8 @@ class AutoencoderModule(L.LightningModule):
         self.test_scores = []
 
     def configure_optimizers(self):
-        return self.optimizer_factory(params=self.parameters())
+        optimizer = self.optimizer_factory(params=self.parameters())
+        if self.scheduler_factory is None:  # constant learning rate
+            return optimizer
+        scheduler = self.scheduler_factory(optimizer)
+        return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "epoch"}}

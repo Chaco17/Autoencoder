@@ -1,0 +1,21 @@
+# @package _global_
+# e200_cos + a wider bottleneck (latent_dim 128 -> 256). The VAE reconstructions in base are blurry
+# (all the information goes through z): more latent dimensions keep more detail, which also lowers the
+# error on good images (less noise hiding the defects). In the U-Net latent_dim is the number of channels
+# of the 8x8 bottleneck, which now matches the 256 channels of the last encoder level.
+# Compared with e200_cos, it isolates the effect of the bottleneck size.
+trial:
+  name: e200_cos_z256
+  description: 200 épocas, batch 32, z 256, lr coseno 1e-3 -> 1e-5
+
+trainer:
+  max_epochs: 200
+
+model:
+  net:
+    latent_dim: 256
+  scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true          # the optimizer is passed later in configure_optimizers()
+    T_max: ${trainer.max_epochs}
+    eta_min: 1.0e-5

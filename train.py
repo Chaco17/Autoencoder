@@ -3,7 +3,9 @@
 Usage:
     python train.py                         # defaults from conf/config.yaml
     python train.py model=u-net loss=ssim   # pick other config options
-    python train.py -m                      # sweep 2 models x 4 losses
+    python train.py trial=e200_cos          # another set of hyperparameters (conf/trial/)
+    python train.py -m                      # sweep trials x 2 models x 4 losses (runs already done are skipped)
+    python train.py skip_existing.enabled=false   # train even if the same experiment was already done
     python train.py console.verbose=false   # compact output (what the notebook uses)
 """
 import json
@@ -33,6 +35,9 @@ from src.callbacks import (
 )
 from src.data import MVTecDataModule
 from src.module import AutoencoderModule
+from src.registry import find_existing, run_key
+
+ROOT = Path(__file__).resolve().parent
 
 
 def quiet_mode():
@@ -56,6 +61,20 @@ def main(cfg: DictConfig) -> None:
     else:
         quiet_mode()
     start = time.perf_counter()
+
+    # Skip experiments that were already done (same hyperparameters), so a sweep can be relaunched
+    # without duplicating runs in W&B. Checked before the W&B run is created.
+    key = run_key(cfg)
+    if cfg.skip_existing.enabled:
+        try:
+            existing = find_existing(cfg, ROOT)
+        except Exception as error:  # e.g. no connection to W&B: only the local check can be done
+            print(f"   (no se pudo consultar W&B para {cfg.run_name}: {error}; solo se revisa outputs/ y multirun/)", flush=True)
+            existing = find_existing(cfg, ROOT, remote={})
+        if existing:
+            print(f"\n>> SALTADA {cfg.run_name} [{key}]: ya existe -> {existing}", flush=True)
+            return
+
     torch.set_float32_matmul_precision("high")  # TF32 on Tensor Core GPUs: faster, negligible precision change
     L.seed_everything(cfg.seed, workers=True, verbose=verbose)
     output_dir = Path(HydraConfig.get().runtime.output_dir)
@@ -69,16 +88,17 @@ def main(cfg: DictConfig) -> None:
         loss_fn=instantiate(cfg.loss.fn),
         optimizer=instantiate(cfg.model.optimizer),  # partial: receives params later
         beta=cfg.model.beta,
+        scheduler=instantiate(cfg.model.scheduler) if cfg.model.get("scheduler") else None,  # partial, optional
     )
 
     # Logger: W&B run named <model>-<loss>, with the full resolved config attached
     logger = instantiate(cfg.logger.wandb)
     logger._wandb_init.pop("anonymous", None)  # Lightning always sends it; wandb >= 0.31 warns that it is deprecated
-    logger.log_hyperparams(OmegaConf.to_container(cfg, resolve=True))
+    logger.log_hyperparams({**OmegaConf.to_container(cfg, resolve=True), "run_key": key})  # run_key: src/registry.py
 
     print(
-        f"\n>> {cfg.run_name} | {cfg.trainer.max_epochs} épocas | batch {cfg.data.batch_size} | "
-        f"z {cfg.model.net.latent_dim} | lr {cfg.model.optimizer.lr} | W&B {cfg.logger.wandb.mode}",
+        f"\n>> {cfg.run_name} [{key}] | {cfg.trial.description} | "
+        f"z {cfg.model.net.latent_dim} | W&B {cfg.logger.wandb.mode}",
         flush=True,
     )
     if cfg.logger.wandb.mode == "online":
@@ -111,9 +131,12 @@ def main(cfg: DictConfig) -> None:
         "run": cfg.run_name,
         "model": cfg.model.name,
         "loss": cfg.loss.name,
+        "trial": cfg.trial.name,
+        "run_key": key,
         "epochs": trainer.current_epoch,
         "best_epoch": summary.best_epoch,
         "best_val_loss": summary.best_val_loss,
+        "best_train_loss": summary.best_train_loss,  # train/loss of the best epoch
         "minutes": round((time.perf_counter() - start) / 60, 2),
         "wandb_url": logger.experiment.url if cfg.logger.wandb.mode == "online" else None,
         "output_dir": str(output_dir),

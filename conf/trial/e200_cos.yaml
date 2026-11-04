@@ -1,0 +1,18 @@
+# @package _global_
+# In base, train/loss ~ val/loss (no overfitting) and most runs reached their best val/loss in the last
+# epochs (still improving), while val/loss oscillated at the end with the constant lr 1e-3.
+# -> twice the epochs and a learning rate that decays from 1e-3 to 1e-5 (cosine): big steps at the
+#    start, fine adjustments at the end, so the runs settle in a lower minimum instead of oscillating.
+trial:
+  name: e200_cos
+  description: 200 épocas, batch 32, z 128, lr coseno 1e-3 -> 1e-5
+
+trainer:
+  max_epochs: 200
+
+model:
+  scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true          # the optimizer is passed later in configure_optimizers()
+    T_max: ${trainer.max_epochs}
+    eta_min: 1.0e-5

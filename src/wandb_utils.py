@@ -33,18 +33,40 @@ def _model_loss(run):
     return model, loss
 
 
-def get_runs(project, entity=None, state="finished"):
-    """Latest finished training run for each (model, loss) -> {(model, loss): run}."""
+def run_trial(run):
+    """Trial (set of hyperparameters, conf/trial/) of a training run; runs from before trials existed are 'base'."""
+    trial = run.config.get("trial")
+    return trial.get("name", "base") if isinstance(trial, dict) else run.config.get("trial/name", "base")
+
+
+def get_all_runs(project, entity=None, state="finished"):
+    """Latest finished training run for each (model, loss, trial) -> {(model, loss, trial): run}."""
     api = wandb.Api()
     path = f"{entity}/{project}" if entity else project
     runs = {}
     for run in api.runs(path, filters={"state": state}, order="-created_at"):
         if run.job_type == "analysis":  # runs created by the notebook itself
             continue
-        key = _model_loss(run)
+        key = (*_model_loss(run), run_trial(run))
         if None not in key and key not in runs:  # newest first: keep the latest of each config
             runs[key] = run
     return runs
+
+
+def get_runs(project, entity=None, state="finished", trial="base"):
+    """Latest finished training run for each (model, loss) of one trial -> {(model, loss): run}."""
+    return {(m, l): run for (m, l, t), run in get_all_runs(project, entity, state).items() if t == trial}
+
+
+def trials_table(runs, keys):
+    """List of dicts (one per (model, loss, trial) run) with the final value of each summary key."""
+    rows = []
+    for (model, loss, trial), run in sorted(runs.items()):
+        row = {"model": model, "loss": loss, "trial": trial, "run": run.name}
+        for key in keys:
+            row[key] = run.summary.get(key)
+        rows.append(row)
+    return rows
 
 
 # ---------------------------------------------------------------- scalars

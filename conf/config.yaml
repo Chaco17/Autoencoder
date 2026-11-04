@@ -1,17 +1,19 @@
 # Main Hydra config: composes one option from each config group.
 # Override any group or value from the CLI, e.g.:
-#   python train.py model=u-net loss=ssim trainer.max_epochs=100 model.net.latent_dim=64
-#   python train.py -m            # sweeps the 8 runs defined in hydra.sweeper.params
+#   python train.py model=u-net loss=ssim trial=e200_cos model.net.latent_dim=64
+#   python train.py -m                  # sweeps every trial x 2 models x 4 losses (runs already done are skipped)
+#   python train.py -m trial=e200_cos   # only one trial (8 runs)
 defaults:
   - data: mvtec
   - model: vae
   - loss: l1
   - trainer: default
   - logger: wandb
+  - trial: base        # after the other groups: a trial overrides their values (epochs, batch size, lr...)
   - _self_
 
 seed: 42
-run_name: ${model.name}-${loss.name}
+run_name: ${model.name}-${loss.name}-${trial.name}
 
 hydra:
   run:
@@ -20,9 +22,16 @@ hydra:
     dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: ${run_name}
   sweeper:
-    params:                       # only used with -m (multirun): 2 models x 4 losses
+    params:                       # only used with -m (multirun): trials x 2 models x 4 losses
+      trial: base,e200_cos,e200_cos_z256   # first key = outer loop: one trial is finished before the next
       model: vae,u-net
       loss: l1,l2,ssim,ssim_l1
+
+# Do not train (nor create a W&B run) when the same experiment was already done. Two runs are the same
+# experiment when their hyperparameters (data, model, loss, trainer, seed) are equal; see src/registry.py.
+skip_existing:
+  enabled: true      # false = always train (e.g. after changing the code of the models or losses)
+  check_wandb: true  # also look for finished runs in the W&B project (runs launched by other team members)
 
 console:
   verbose: true              # false = compact output: one line per epoch + summary per run (used by the notebook)

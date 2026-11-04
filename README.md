@@ -30,6 +30,21 @@ py -3.11 -m venv .venv
 Después, abrir `notebooks/main.ipynb` con el kernel `.venv` y ejecutarlo en orden (el entrenamiento se lanza
 desde la sección 6 del notebook).
 
+## Experimentos
+
+Cada combinación modelo (VAE, U-Net) × pérdida (L1, L2, SSIM, SSIM+L1) se entrena con varios **trials**
+(conjuntos de hiperparámetros en `conf/trial/`: `base`, `e200_cos`, `e200_cos_z256`): 3 × 8 = 24 corridas.
+
+```powershell
+.venv\Scripts\python train.py -m                        # todos los trials x 2 modelos x 4 pérdidas
+.venv\Scripts\python train.py -m trial=e200_cos         # un solo trial (8 corridas)
+.venv\Scripts\python train.py model=u-net loss=ssim trial=e200_cos_z256
+```
+
+Las corridas que ya existen **se saltan** (no se duplican en W&B). Esto incluye las guardadas en `outputs/`/`multirun/`
+y las corridas terminadas en el proyecto de W&B, comparando un hash de sus hiperparámetros (`src/registry.py`).
+Para forzar un reentrenamiento: `skip_existing.enabled=false`.
+
 ## Dataset
 
 Se usan solo 4 clases de MVTec AD: `cable`, `capsule`, `screw` y `transistor`.

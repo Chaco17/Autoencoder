@@ -1,0 +1,7 @@
+# @package _global_
+# Trial = set of training hyperparameters applied on top of the data/model/trainer groups.
+# Every trial is trained with the 2 models x 4 losses. "base" = the values of the other groups
+# (100 epochs, batch 32, Adam lr 1e-3 constant): the original 8 runs.
+trial:
+  name: base
+  description: 100 épocas, batch 32, lr 1e-3 constante

@@ -174,6 +174,7 @@ class EpochSummaryCallback(Callback):
         self.run_name = run_name
         self.every_n_epochs = every_n_epochs
         self.best_epoch, self.best_val_loss = None, float("inf")
+        self.best_train_loss = None  # train/loss of the best epoch (compared with best_val_loss: over/underfitting)
         self.epoch_times = []
 
     def on_train_epoch_start(self, trainer, pl_module):
@@ -188,6 +189,7 @@ class EpochSummaryCallback(Callback):
         improved = val_loss < self.best_val_loss
         if improved:
             self.best_epoch, self.best_val_loss = epoch, val_loss
+            self.best_train_loss = float(metrics.get("train/loss", float("nan")))
 
         if trainer.progress_bar_callback is not None:
             return
