@@ -1,23 +1,19 @@
-"""Helpers used by the notebook to pull results back from W&B (curves, images, t-SNE, tables).
+"""Helpers used by the notebook to pull results back from W&B (metrics, images, t-SNE, tables).
 
-Every figure shown in the notebook's results sections comes from what train.py logged to W&B,
-or is built from W&B data and logged back to W&B (analysis run) before being displayed.
+Nothing is logged back to W&B: the images and t-SNE figures are shown exactly as train.py logged
+them, and the metrics / test/scores table are only turned into tables.
 """
-import base64
 import json
 import re
 from pathlib import Path
 
 import numpy as np
-import plotly.graph_objects as go
 import plotly.io as pio
 import wandb
-from plotly.subplots import make_subplots
 from sklearn.metrics import roc_auc_score
 
 MODELS = ["vae", "u-net"]
 LOSSES = ["l1", "l2", "ssim", "ssim_l1"]
-LOSS_COLORS = {"l1": "#1f77b4", "l2": "#ff7f0e", "ssim": "#2ca02c", "ssim_l1": "#d62728"}
 SCORE_NAMES = {
     "score_l1": "error L1 medio",
     "score_mse": "error cuadrático medio",
@@ -84,7 +80,7 @@ def trials_table(runs, keys):
 def summary_table(runs, keys):
     """List of dicts (one per (model, loss) run) with the final value of each summary key."""
     rows = []
-    for (model, loss), run in sorted(runs.items(), key=lambda kv: (MODELS.index(kv[0][0]), LOSSES.index(kv[0][1]))):
+    for (model, loss), run in _ordered(runs):
         row = {"model": model, "loss": loss, "run": run.name}
         for key in keys:
             row[key] = run.summary.get(key)
@@ -101,55 +97,27 @@ def metric_history(run, key):
     return [r["epoch"] + 1 for r in rows], [r[key] for r in rows]
 
 
-def train_val_figure(runs, model, log_y=True):
-    """One subplot per loss function with its train/loss (solid) and val/loss (dashed) curves.
-
-    Each subplot has its own y axis: every loss has its own scale, so only train vs val of the
-    same run (convergence and overfitting) is compared here.
-    """
-    fig = make_subplots(rows=1, cols=len(LOSSES), subplot_titles=LOSSES, horizontal_spacing=0.06)
-    for col, loss in enumerate(LOSSES, start=1):
-        run = runs.get((model, loss))
-        if run is None:
-            continue
-        for key, dash in (("train/loss", "solid"), ("val/loss", "dash")):
-            epochs, values = metric_history(run, key)
-            fig.add_trace(
-                go.Scatter(x=epochs, y=values, mode="lines", name=key, legendgroup=key, showlegend=col == 1,
-                           line=dict(color=LOSS_COLORS[loss], dash=dash)),
-                row=1, col=col,
-            )
-        fig.update_xaxes(title_text="época", row=1, col=col)
-        if log_y:
-            fig.update_yaxes(type="log", row=1, col=col)
-    fig.update_layout(title=f"{model}: pérdida de entrenamiento (continua) y validación (discontinua)",
-                      template="plotly_white", height=380)
-    return fig
+def _ordered(runs):
+    """Runs of one trial ordered as MODELS x LOSSES."""
+    return sorted(runs.items(), key=lambda kv: (MODELS.index(kv[0][0]), LOSSES.index(kv[0][1])))
 
 
-def loss_curves_figure(runs, model, keys=("val/l1", "val/mse", "val/ssim")):
-    """One subplot per key, one line per loss function, for a given model (metrics on a common scale)."""
-    fig = make_subplots(rows=1, cols=len(keys), subplot_titles=list(keys))
-    for col, key in enumerate(keys, start=1):
-        for loss in LOSSES:
-            run = runs.get((model, loss))
-            if run is None:
-                continue
-            epochs, values = metric_history(run, key)
-            fig.add_trace(
-                go.Scatter(x=epochs, y=values, mode="lines", name=loss, legendgroup=loss,
-                           showlegend=col == 1, line=dict(color=LOSS_COLORS[loss])),
-                row=1, col=col,
-            )
-        fig.update_xaxes(title_text="época", row=1, col=col)
-    fig.update_layout(title=f"{model}: {' / '.join(keys)} por función de pérdida", template="plotly_white", height=380)
-    return fig
+def metric_table(runs, key, epochs):
+    """List of dicts (one per (model, loss) run) with the value of `key` logged at each of the given epochs."""
+    rows = []
+    for (model, loss), run in _ordered(runs):
+        by_epoch = dict(zip(*metric_history(run, key)))
+        rows.append({"model": model, "loss": loss, **{epoch: by_epoch.get(epoch) for epoch in epochs}})
+    return rows
 
 
 # ---------------------------------------------------------------- media
 
 def _media_files(value):
     """File paths inside a logged media value (image list, plotly or table)."""
+    # run.summary returns SummarySubDict, which is dict-like but not a dict subclass
+    if value is not None and not isinstance(value, dict) and hasattr(value, "keys"):
+        value = {k: value[k] for k in value.keys()}
     if not isinstance(value, dict):
         return []
     if "filenames" in value:  # list of images (WandbLogger.log_image)
@@ -219,42 +187,6 @@ def load_table(run, key="test/scores", root="wandb_downloads"):
     return [dict(zip(data["columns"], row)) for row in data["data"]]
 
 
-# ---------------------------------------------------------------- t-SNE
-
-def _array(value):
-    """Plotly >= 6 stores arrays in JSON as {'dtype', 'bdata'} (base64); returns a numpy array."""
-    if isinstance(value, dict) and "bdata" in value:
-        return np.frombuffer(base64.b64decode(value["bdata"]), dtype=np.dtype(value["dtype"]))
-    return np.asarray(value)
-
-
-def tsne_grid(figures, titles, cols=4, title="", height_per_row=330):
-    """Several logged t-SNE figures as subplots of a single figure (same colors/symbols, one shared legend)."""
-    n_rows = -(-len(figures) // cols)
-    grid = make_subplots(rows=n_rows, cols=cols, subplot_titles=titles, horizontal_spacing=0.03, vertical_spacing=0.08)
-    shown = set()
-    for i, fig in enumerate(figures):
-        r, c = i // cols + 1, i % cols + 1
-        for trace in fig.data:
-            grid.add_trace(
-                go.Scatter(x=_array(trace.x), y=_array(trace.y), mode="markers", name=trace.name,
-                           legendgroup=trace.name, showlegend=trace.name not in shown,
-                           marker=dict(size=4, opacity=0.75, color=trace.marker.color, symbol=trace.marker.symbol)),
-                row=r, col=c,
-            )
-            shown.add(trace.name)
-    grid.update_xaxes(showticklabels=False)
-    grid.update_yaxes(showticklabels=False)
-    grid.update_layout(title=title, template="plotly_white", height=height_per_row * n_rows)
-    return grid
-
-
-def tsne_epoch(fig):
-    """Epoch (from 1) written in the title of a validation t-SNE figure."""
-    match = re.search(r"epoch (\d+)", fig.layout.title.text or "")
-    return int(match.group(1)) + 1 if match else None
-
-
 # ---------------------------------------------------------------- anomaly scores
 
 def _auroc(good, bad):
@@ -273,36 +205,6 @@ def defect_table(rows, score="score_ssim"):
                         "error good": float(np.mean(good)), "error defect": float(np.mean(bad)),
                         "razón defect/good": float(np.mean(bad) / np.mean(good)), "auroc": _auroc(good, bad)})
     return out
-
-
-def error_histograms(rows, category, score="score_ssim", title_prefix=""):
-    """Histograms of the reconstruction error: good vs each defect type of one category.
-
-    Normalized as probability (there are ~3 times more good images than images of each defect) and with
-    the same bins in both, so the overlap reads directly; the AUROC of each defect is in its subplot title.
-    """
-    cat_rows = [r for r in rows if r["category"] == category]
-    good = [r[score] for r in cat_rows if r["label"] == 0]
-    defects = sorted({r["defect"] for r in cat_rows} - {"good"})
-    values = [r[score] for r in cat_rows]
-    bins = dict(start=min(values), end=max(values), size=(max(values) - min(values)) / 25 or 1e-6)
-    titles = [f"{d} (n={sum(r['defect'] == d for r in cat_rows)}, AUROC {_auroc(good, [r[score] for r in cat_rows if r['defect'] == d]):.2f})"
-              for d in defects]
-    cols = min(3, len(defects))
-    n_rows = -(-len(defects) // cols)
-    fig = make_subplots(rows=n_rows, cols=cols, subplot_titles=titles, vertical_spacing=0.12)
-    for i, defect in enumerate(defects):
-        r, c = i // cols + 1, i % cols + 1
-        bad = [x[score] for x in cat_rows if x["defect"] == defect]
-        fig.add_trace(go.Histogram(x=good, name=f"good (n={len(good)})", marker_color="#2ca02c", opacity=0.6,
-                                   xbins=bins, histnorm="probability", legendgroup="good", showlegend=i == 0), row=r, col=c)
-        fig.add_trace(go.Histogram(x=bad, name="con defecto", marker_color="#d62728", opacity=0.6,
-                                   xbins=bins, histnorm="probability", legendgroup="defective", showlegend=i == 0),
-                      row=r, col=c)
-    fig.update_xaxes(title_text=SCORE_NAMES.get(score, score), row=n_rows)
-    fig.update_layout(barmode="overlay", template="plotly_white", height=260 * n_rows + 80,
-                      title=f"{title_prefix}{category}: error de reconstrucción ({SCORE_NAMES.get(score, score)}), good vs cada defecto")
-    return fig
 
 
 def good_vs_defective_means(rows, score="score_ssim"):
