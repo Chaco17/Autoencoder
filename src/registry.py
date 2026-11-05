@@ -97,7 +97,8 @@ def wandb_runs(project, entity=None):
     api = wandb.Api(timeout=60)
     path = f"{entity}/{project}" if entity else project
     runs = {}
-    for run in api.runs(path, filters={"state": "finished"}, order="-created_at"):
+    # lazy=False: config comes with each page of runs (lazy runs make one extra request per run)
+    for run in api.runs(path, filters={"state": "finished"}, order="-created_at", lazy=False):
         if run.job_type == "analysis":  # runs created by the notebook itself
             continue
         config = run.config
