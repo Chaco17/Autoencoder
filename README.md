@@ -45,6 +45,18 @@ Las corridas que ya existen **se saltan** (no se duplican en W&B). Esto incluye 
 y las corridas terminadas en el proyecto de W&B, comparando un hash de sus hiperparámetros (`src/registry.py`).
 Para forzar un reentrenamiento: `skip_existing.enabled=false`.
 
+### Histogramas del error en W&B
+
+Después de entrenar, `scripts/log_histograms.py` agrega a cada corrida terminada sus histogramas del error
+(imágenes buenas vs cada tipo de defecto, por clase y puntaje) a partir de su tabla `test/scores`, sin reentrenar.
+Las corridas que ya los tienen se saltan. No ejecutarlo mientras corre `train.py` o el notebook.
+
+```powershell
+.venv\Scripts\python scripts/log_histograms.py --dry-run          # solo lista lo que haría
+.venv\Scripts\python scripts/log_histograms.py                    # todas las corridas
+.venv\Scripts\python scripts/log_histograms.py --trial e200_cos   # solo un trial
+```
+
 ## Dataset
 
 Se usan solo 4 clases de MVTec AD: `cable`, `capsule`, `screw` y `transistor`.
